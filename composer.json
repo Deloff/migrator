@@ -1,0 +1,23 @@
+{
+  "name": "deloff/migrator",
+  "description": "Migration data between database with different structure",
+
+  "homepage": "https://github.com/Deloff/migrator",
+  "require": {
+    "php": ">=5.5",
+    "amercier/cli-helpers": "1.*",
+    "doctrine/dbal": "2.*"
+  },
+  "repositories": [
+    {
+      "type": "git",
+      "url": "https://github.com/Deloff/migrator.git"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Migrator\\": "src"
+    }
+  },
+  "bin": ["bin/migrator"]
+}
