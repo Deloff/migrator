@@ -1,25 +1,32 @@
 <?php
 /**
- * @company MTE Telecom, Ltd.
- * @author Roman Malashin <malashinr@mte-telecom.ru>
+ * Механизм для миграции данных между БД с различными структурами
+ *
+ * @package Migrator
+ * @author Roman Malashin <deller@inbox.ru>
  */
 
 return [
-    'from' => [
-        'driver' => 'pdo_pgsql',
-        'host' => 'localhost',
-        'port' => '5432',
-        'user' => 'postgres',
-        'password' => 'postgres',
-        'dbname' => 'aip_old'
+    'databases' => [
+        'from' => [
+            'driver' => 'pdo_pgsql',
+            'host' => 'localhost',
+            'port' => '5432',
+            'user' => 'postgres',
+            'password' => 'postgres',
+            'dbname' => 'aip_old'
+        ],
+        'to' => [
+            'driver' => 'pdo_pgsql',
+            'host' => 'localhost',
+            'port' => '5432',
+            'user' => 'postgres',
+            'password' => 'postgres',
+            'dbname' => 'aip'
+        ]
     ],
-
-    'to' => [
-        'driver' => 'pdo_pgsql',
-        'host' => 'localhost',
-        'port' => '5432',
-        'user' => 'postgres',
-        'password' => 'postgres',
-        'dbname' => 'aip'
+    'migrator' => [
+        'data' => [
+        ]
     ]
 ];

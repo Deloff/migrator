@@ -1,17 +1,22 @@
 <?php
 /**
- * @company MTE Telecom, Ltd.
- * @author Roman Malashin <malashinr@mte-telecom.ru>
+ * Механизм для миграции данных между БД с различными структурами
+ *
+ * @package Migrator
+ * @author Roman Malashin <deller@inbox.ru>
  */
 
 use Cli\Helpers\Parameter;
 use Cli\Helpers\DocumentedScript;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Configuration;
+use Migrator\Exception\RuntimeException;
 
 
-$autoloadFiles = array(__DIR__ . '/../vendor/autoload.php',
-    __DIR__ . '/../../../autoload.php');
+$autoloadFiles = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php'
+];
 
 foreach ($autoloadFiles as $autoloadFile) {
     if (file_exists($autoloadFile)) {
@@ -19,8 +24,6 @@ foreach ($autoloadFiles as $autoloadFile) {
     }
 }
 try {
-    $config = require_once __DIR__ . '/../config/config.local.php';
-
     $documentedScript = new DocumentedScript();
     $documentedScript->setName('migrator')
         ->setVersion('0.1')
@@ -31,22 +34,23 @@ try {
             'Путь до конфигурационного файла'
         )
         ->addParameter(new Parameter('t', 'type',  Parameter::VALUE_REQUIRED), 'Тип портируемых данных')
-        ->addParameter(new Parameter('v', 'verbose', Parameter::VALUE_NO_VALUE), 'Enable verbosity.')
         ->setProgram(function ($options, $arguments) {
-            var_dump($arguments);
-            var_dump($options);
+            $config = require_once __DIR__ . '/../config/config.local.php';
+
+            if(!array_key_exists('migrator', $config) || !is_array($config['migrator'])) {
+                throw new RuntimeException('В массиве конфигурации не задана секция migrator');
+            }
+            $migratorConfig = $config['migrator'];
+            $fromConfigurationObject = new Configuration();
+            $toConfigurationObject = clone $fromConfigurationObject;
+
+            $fromConnection = DriverManager::getConnection($config['from'], $fromConfigurationObject);
+            $toConnection = DriverManager::getConnection($config['to'], $toConfigurationObject);
+
+            $migrator = new Migrator\Migrate($fromConnection, $toConnection, $migratorConfig);
+            $migrator->run($arguments['type']);
         })
         ->start();
-
-
-    $fromConfigurationObject = new Configuration();
-    $toConfigurationObject = clone $fromConfigurationObject;
-
-    $fromConnection = DriverManager::getConnection($config['from'], $fromConfigurationObject);
-    $toConnection = DriverManager::getConnection($config['to'], $toConfigurationObject);
-
-//    $migrator = new Migrator\Migrate($fromConnection, $toConnection);
-//    $migrator->run();
 } catch (\Exception $e) {
     echo $e->getMessage();
 }

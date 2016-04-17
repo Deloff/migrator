@@ -1,18 +1,22 @@
 <?php
 /**
- * @company MTE Telecom, Ltd.
- * @author Roman Malashin <malashinr@mte-telecom.ru>
+ * Механизм для миграции данных между БД с различными структурами
+ *
+ * @package Migrator
+ * @author Roman Malashin <deller@inbox.ru>
  */
 
 namespace Migrator;
 
 use Doctrine\DBAL\Driver\Connection;
+use Migrator\Handler\HandlerInterface;
+use Migrator\Mapper\MapperInterface;
 
 /**
  * Class Migrate 
  * @package Migrator
  */
-class Migrate 
+class Migrate
 {
     /**
      * Соединения с БД из которой забираются данные
@@ -26,54 +30,146 @@ class Migrate
      */
     protected $toConnection;
 
-    /**
-     * Опции для механизма миграций
-     * @var array
-     */
-    protected $options;
 
     /**
-     * @param array $config
-     * @param array $options
+     * Массив конфигурации данных
+     * @var array
      */
-    public function __construct(Connection $fromConnection, Connection $toConnection, array $options = [])
+    protected $configuration;
+
+    /**
+     * @var FactoryInterface
+     */
+    protected $mapperFactory;
+
+    /**
+     * @var FactoryInterface
+     */
+    protected $handlerFactory;
+
+    /**
+     * @var FactoryInterface
+     */
+    protected $mutatorFactory;
+
+    /**
+     * Конструктор класса
+     * @param Connection $fromConnection
+     * @param Connection $toConnection
+     * @param array $configuration
+     */
+    public function __construct(Connection $fromConnection, Connection $toConnection, array $configuration)
     {
         $this->setFromConnection($fromConnection);
         $this->setToConnection($toConnection);
-        $this->setOptions($options);
+        $this->setConfiguration($configuration);
+    }
+
+    /**
+     * Осуществляет
+     * @param string $type
+     */
+    public function run($type = '')
+    {
+        $config = $this->getConfiguration();
+        if (!array_key_exists('data', $config) || !$config['data']) {
+            throw new Exception\RuntimeException('В конфигурации должна быть секция data');
+        }
+        $config = $config['data'];
+        if (!array_key_exists($type, $config) || !$config[$type]) {
+            throw new Exception\InvalidTypeException('В конфигурации не найден переданный тип.');
+        }
+        if ($type) {
+            $this->porting($config[$type]);
+        } else {
+            foreach ($config as $typeConfig) {
+                $this->porting($typeConfig);
+            }
+        }
+    }
+
+    /**
+     * Оусуществляет всю логику портирования
+     * @param array $typeConfig
+     */
+    protected function porting(array $typeConfig)
+    {
+        $fromMapperKey = 'fromMapper';
+        $toMapperKey = 'toMapperKey';
+        $mapper = $this->getMapper($typeConfig, $fromMapperKey);
+        $mapper->setConnection($this->getFromConnection());
+        if (!array_key_exists('method', $typeConfig[$fromMapperKey])
+            || !method_exists($mapper, $typeConfig[$fromMapperKey]['method'])) {
+            throw new Exception\RuntimeException(
+                'В конфигурации не задан метод для выборки данных или данного метода нет в классе'
+            );
+        }
+        $method = $typeConfig[$fromMapperKey]['method'];
+        $data = $mapper->$method();
+
+        $handler = $this->getHandler($typeConfig);
+        if (!$handler instanceof HandlerInterface) {
+            throw new Exception\RuntimeException(
+                sprintf('Handler должен реализовывать %s', HandlerInterface::class)
+            );
+        }
+        $data = $handler->handle($data);
+        $mapper = $this->getMapper($typeConfig, $toMapperKey);
+        $mapper->setConnection($this->getToConnection());
+        if (!array_key_exists('method', $typeConfig[$toMapperKey])
+            || !method_exists($mapper, $typeConfig[$toMapperKey]['method'])) {
+            throw new Exception\RuntimeException(
+                'В конфигурации не задан метод для выборки данных или данного метода нет в классе'
+            );
+        }
+        $method = $typeConfig[$toMapperKey]['method'];
+        $mapper->$method($data);
+    }
+
+    /**
+     * Возвращает созданный и настроенный маппер по конфигу
+     * @param array $config
+     * @param string $key
+     * @return MapperInterface
+     */
+    protected function getMapper(array $config, $key)
+    {
+        if (!array_key_exists($key, $config)) {
+            throw new Exception\RuntimeException(sprintf('В конфигурации не указан %s', $key));
+        }
+        $mapperConfig = $config[$key];
+        return $this->getMapperFactory()->create($mapperConfig);
+    }
+
+    /**
+     * @param array $config
+     * @return HandlerInterface
+     */
+    protected function getHandler(array $config)
+    {
+        if (!array_key_exists('handler', $config)) {
+            throw new Exception\RuntimeException('В конфигурации не указан handler');
+        }
+        $mapperConfig = $config['handler'];
+        return $this->getHandlerFactory()->create($mapperConfig);
     }
 
     /**
      *
-     * @param array $configuration
-     */
-    public function configure($configuration)
-    {
-
-    }
-
-
-
-    public function run()
-    {
-
-    }
-
-    /**
      * @return array
      */
-    public function getOptions()
+    public function getConfiguration()
     {
-        return $this->options;
+        return $this->configuration;
     }
 
     /**
-     * @param array $options
+     * @param array $configuration
      * @return $this
      */
-    public function setOptions($options)
+    public function setConfiguration($configuration)
     {
-        $this->options = $options;
+        $this->configuration = $configuration;
         return $this;
     }
 
@@ -110,6 +206,69 @@ class Migrate
     public function setToConnection($toConnection)
     {
         $this->toConnection = $toConnection;
+        return $this;
+    }
+
+    /**
+     * @return FactoryInterface
+     */
+    public function getMapperFactory()
+    {
+        if (!$this->mapperFactory) {
+            $this->mapperFactory = new AbstractFactory();
+        }
+        return $this->mapperFactory;
+    }
+
+    /**
+     * @param FactoryInterface $mapperFactory
+     * @return $this
+     */
+    public function setMapperFactory($mapperFactory)
+    {
+        $this->mapperFactory = $mapperFactory;
+        return $this;
+    }
+
+    /**
+     * @return FactoryInterface
+     */
+    public function getHandlerFactory()
+    {
+        if (!$this->handlerFactory) {
+            $this->handlerFactory = new AbstractFactory();
+        }
+        return $this->handlerFactory;
+    }
+
+    /**
+     * @param FactoryInterface $handlerFactory
+     * @return $this
+     */
+    public function setHandlerFactory($handlerFactory)
+    {
+        $this->handlerFactory = $handlerFactory;
+        return $this;
+    }
+
+    /**
+     * @return FactoryInterface
+     */
+    public function getMutatorFactory()
+    {
+        if (!$this->mutatorFactory) {
+            $this->mutatorFactory = new AbstractFactory();
+        }
+        return $this->mutatorFactory;
+    }
+
+    /**
+     * @param FactoryInterface $mutatorFactory
+     * @return $this
+     */
+    public function setMutatorFactory($mutatorFactory)
+    {
+        $this->mutatorFactory = $mutatorFactory;
         return $this;
     }
 }
