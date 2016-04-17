@@ -108,12 +108,14 @@ class Migrate
         $data = $mapper->$method();
 
         $handler = $this->getHandler($typeConfig);
-        if (!$handler instanceof HandlerInterface) {
-            throw new Exception\RuntimeException(
-                sprintf('Handler должен реализовывать %s', HandlerInterface::class)
-            );
+        if(!is_null($handler)) {
+            if (!$handler instanceof HandlerInterface) {
+                throw new Exception\RuntimeException(
+                    sprintf('Handler должен реализовывать %s', HandlerInterface::class)
+                );
+            }
+            $data = $handler->handle($data);
         }
-        $data = $handler->handle($data);
         $mapper = $this->getMapper($typeConfig, $toMapperKey);
         $mapper->setConnection($this->getToConnection());
         if (!array_key_exists('method', $typeConfig[$toMapperKey])
@@ -147,11 +149,12 @@ class Migrate
      */
     protected function getHandler(array $config)
     {
-        if (!array_key_exists('handler', $config)) {
-            throw new Exception\RuntimeException('В конфигурации не указан handler');
+        $handler = null;
+        if (array_key_exists('handler', $config)) {
+            $mapperConfig = $config['handler'];
+            $handler = $this->getHandlerFactory()->create($mapperConfig);
         }
-        $mapperConfig = $config['handler'];
-        return $this->getHandlerFactory()->create($mapperConfig);
+        return $handler;
     }
 
     /**
