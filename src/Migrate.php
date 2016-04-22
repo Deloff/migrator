@@ -10,6 +10,7 @@ namespace Migrator;
 
 use Doctrine\DBAL\Driver\Connection;
 use Migrator\Handler\HandlerInterface;
+use Migrator\Mapper\FromMapperInterface;
 use Migrator\Mapper\MapperInterface;
 
 /**
@@ -53,6 +54,12 @@ class Migrate
     protected $mutatorFactory;
 
     /**
+     * Какое количество данных забирать за итерацию.
+     * @var integer
+     */
+    protected $fromLimit = 50;
+
+    /**
      * Конструктор класса
      * @param Connection $fromConnection
      * @param Connection $toConnection
@@ -68,6 +75,7 @@ class Migrate
     /**
      * Осуществляет
      * @param string $type
+     * @param int $fromLimit
      */
     public function run($type = '')
     {
@@ -76,10 +84,10 @@ class Migrate
             throw new Exception\RuntimeException('В конфигурации должна быть секция data');
         }
         $config = $config['data'];
-        if (!array_key_exists($type, $config) || !$config[$type]) {
-            throw new Exception\InvalidTypeException('В конфигурации не найден переданный тип.');
-        }
-        if ($type) {
+        if (is_string($type) && strlen($type)) {
+            if (!array_key_exists($type, $config) || !$config[$type]) {
+                throw new Exception\InvalidTypeException('В конфигурации не найден переданный тип.');
+            }
             $this->porting($config[$type]);
         } else {
             foreach ($config as $typeConfig) {
@@ -94,38 +102,56 @@ class Migrate
      */
     protected function porting(array $typeConfig)
     {
+        echo 'Starting migration..' . PHP_EOL;
         $fromMapperKey = 'fromMapper';
-        $toMapperKey = 'toMapperKey';
-        $mapper = $this->getMapper($typeConfig, $fromMapperKey);
-        $mapper->setConnection($this->getFromConnection());
+        $toMapperKey = 'toMapper';
+        /** @var FromMapperInterface $fromMapper */
+        $fromMapper = $this->getMapper($typeConfig, $fromMapperKey);
+        $fromMapper->setConnection($this->getFromConnection());
         if (!array_key_exists('method', $typeConfig[$fromMapperKey])
-            || !method_exists($mapper, $typeConfig[$fromMapperKey]['method'])) {
+            || !method_exists($fromMapper, $typeConfig[$fromMapperKey]['method'])
+        ) {
             throw new Exception\RuntimeException(
                 'В конфигурации не задан метод для выборки данных или данного метода нет в классе'
             );
         }
-        $method = $typeConfig[$fromMapperKey]['method'];
-        $data = $mapper->$method();
 
         $handler = $this->getHandler($typeConfig);
-        if(!is_null($handler)) {
-            if (!$handler instanceof HandlerInterface) {
-                throw new Exception\RuntimeException(
-                    sprintf('Handler должен реализовывать %s', HandlerInterface::class)
-                );
-            }
-            $data = $handler->handle($data);
-        }
-        $mapper = $this->getMapper($typeConfig, $toMapperKey);
-        $mapper->setConnection($this->getToConnection());
+
+        $toMapper = $this->getMapper($typeConfig, $toMapperKey);
+        $toMapper->setConnection($this->getToConnection());
         if (!array_key_exists('method', $typeConfig[$toMapperKey])
-            || !method_exists($mapper, $typeConfig[$toMapperKey]['method'])) {
+            || !method_exists($toMapper, $typeConfig[$toMapperKey]['method'])
+        ) {
             throw new Exception\RuntimeException(
                 'В конфигурации не задан метод для выборки данных или данного метода нет в классе'
             );
         }
-        $method = $typeConfig[$toMapperKey]['method'];
-        $mapper->$method($data);
+        $i = 0;
+        while (true) {
+            $method = $typeConfig[$fromMapperKey]['method'];
+            $fromMapper->setLimit($this->getFromLimit());
+            $fromMapper->setOffset($i * $this->getFromLimit());
+            $data = $fromMapper->$method();
+            $res = count($data);
+
+            if (!is_null($handler)) {
+                if (!$handler instanceof HandlerInterface) {
+                    throw new Exception\RuntimeException(
+                        sprintf('Handler должен реализовывать %s', HandlerInterface::class)
+                    );
+                }
+                $data = $handler->handle($data);
+            }
+            $method = $typeConfig[$toMapperKey]['method'];
+            $toMapper->$method($data);
+            if ($res < $this->getFromLimit()) {
+                break;
+            }
+            echo '.';
+            $i++;
+        }
+        echo PHP_EOL . 'Migration successful';
     }
 
     /**
@@ -272,6 +298,24 @@ class Migrate
     public function setMutatorFactory($mutatorFactory)
     {
         $this->mutatorFactory = $mutatorFactory;
+        return $this;
+    }
+
+    /**
+     * @return int
+     */
+    public function getFromLimit()
+    {
+        return $this->fromLimit;
+    }
+
+    /**
+     * @param int $fromLimit
+     * @return $this
+     */
+    public function setFromLimit($fromLimit)
+    {
+        $this->fromLimit = $fromLimit;
         return $this;
     }
 }

@@ -6,7 +6,8 @@
   "require": {
     "php": ">=5.5",
     "amercier/cli-helpers": "1.*",
-    "doctrine/dbal": "2.*"
+    "doctrine/dbal": "2.*",
+    "zendframework/zend-loader": "2.4.*"
   },
   "repositories": [
     {
