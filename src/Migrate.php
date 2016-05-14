@@ -130,8 +130,10 @@ class Migrate
         $i = 0;
         while (true) {
             $method = $typeConfig[$fromMapperKey]['method'];
-            $fromMapper->setLimit($this->getFromLimit());
-            $fromMapper->setOffset($i * $this->getFromLimit());
+            if ($fromMapper instanceof FromMapperInterface) {
+                $fromMapper->setLimit($this->getFromLimit());
+                $fromMapper->setOffset($i * $this->getFromLimit());
+            }
             $data = $fromMapper->$method();
             $res = count($data);
 
