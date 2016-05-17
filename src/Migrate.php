@@ -136,6 +136,9 @@ class Migrate
             }
             $data = $fromMapper->$method();
             $res = count($data);
+            if (!$res) {
+                break;
+            }
 
             if (!is_null($handler)) {
                 if (!$handler instanceof HandlerInterface) {
@@ -147,9 +150,6 @@ class Migrate
             }
             $method = $typeConfig[$toMapperKey]['method'];
             $toMapper->$method($data);
-            if ($res < $this->getFromLimit()) {
-                break;
-            }
             echo '.';
             $i++;
         }
